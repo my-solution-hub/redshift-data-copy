@@ -1,0 +1,33 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "redshift.amazonaws.com"
+      },
+      "Action": "redshift:AuthorizeInboundIntegration",
+      "Resource": "arn:aws:redshift:ap-southeast-1:613477150601:namespace:71cd1029-b9a0-46b7-8738-dcbd301b377d",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceArn": "arn:aws:s3:::719821274597-data-source",
+          "aws:SourceAccount": "719821274597"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::613477150601:user/yagrxu"
+      },
+      "Action": "redshift:CreateInboundIntegration",
+      "Resource": "arn:aws:redshift:ap-southeast-1:613477150601:namespace:71cd1029-b9a0-46b7-8738-dcbd301b377d",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceArn": "arn:aws:s3:::719821274597-data-source",
+          "aws:SourceAccount": "719821274597"
+        }
+      }
+    }
+  ]
+}

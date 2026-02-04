@@ -1,0 +1,28 @@
+# CDK
+*.js
+*.d.ts
+node_modules/
+cdk.out/
+.cdk.staging/
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
