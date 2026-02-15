@@ -1,16 +1,32 @@
-# Cross-Account S3 to Redshift Data Copy Solution
+# Cross-Account S3 to Redshift Data Copy with QuickSight Analytics
 
-## Overview
+## 🎯 What This Demo Does
 
-A cross-account S3 to Redshift data copy solution using **Redshift's native COPY JOB** feature with **S3 event integration**. This eliminates the need for Lambda functions or EventBridge, making it simpler and more efficient.
+This demo shows you how to:
+1. **Automatically copy data** from S3 (Account1) to Redshift (Account2) using native AWS features
+2. **Analyze data** in Redshift with pre-built SQL queries
+3. **Visualize insights** in QuickSight dashboards
 
-Deployed Accounts:
+**No Lambda, No EventBridge** - Uses Redshift's native S3 event integration for simplicity.
 
-- Account1: $ACCOUNT1_ID ($ACCOUNT1_PROFILE profile) - Data Source
-- Account2: $ACCOUNT2_ID ($ACCOUNT2_PROFILE profile) - Data Processing
-- Region: $AWS_REGION
+## 📊 Demo Scenario
 
-Integration Status: ✅ Active
+**Business Context**: E-commerce sales analytics
+- **Data**: Orders, customers, products, order items
+- **Analysis**: Sales by region, top products, customer segments, daily trends
+- **Visualization**: Interactive QuickSight dashboards
+
+## ⏱️ Time to Complete
+
+- **Infrastructure Setup**: 20-30 minutes
+- **Data Loading**: 2-3 minutes
+- **QuickSight Setup**: 10-15 minutes
+- **Total**: ~45 minutes
+
+## 🏗️ Architecture
+
+**Account1** (Data Source) → **Account2** (Analytics)
+- S3 Bucket → Redshift Cluster → QuickSight Dashboards
 
 ## Architecture Overview
 
@@ -85,123 +101,255 @@ Account1 ($ACCOUNT1_ID)                 Account2 ($ACCOUNT2_ID)
 5. **Scalable**: Redshift batches files automatically for optimal performance
 6. **Fully Managed by CDK**: Infrastructure and policies automated via CDK
 
-## Prerequisites
+## 📋 Prerequisites
 
-- AWS CLI configured with two profiles:
-  - Profile for Account1 ($ACCOUNT1_ID) - set as `$ACCOUNT1_PROFILE`
-  - Profile for Account2 ($ACCOUNT2_ID) - set as `$ACCOUNT2_PROFILE`
-- Node.js 18+ and AWS CDK installed
-- Both accounts in the same AWS region (set as `$AWS_REGION`)
-- IAM permissions in Account1 to create Redshift integrations
-- CDK bootstrapped in both accounts (will be done in Quick Start if not already):
-  ```bash
-  cdk bootstrap aws://$ACCOUNT1_ID/$AWS_REGION --profile $ACCOUNT1_PROFILE
-  cdk bootstrap aws://$ACCOUNT2_ID/$AWS_REGION --profile $ACCOUNT2_PROFILE
-  ```
+Before starting, ensure you have:
 
-## Quick Start
+### Required
+- ✅ Two AWS accounts (or one account with cross-account simulation)
+- ✅ AWS CLI installed and configured
+- ✅ Node.js 18+ installed
+- ✅ AWS CDK installed (`npm install -g aws-cdk`)
+- ✅ `jq` installed (for JSON parsing)
 
-Complete end-to-end deployment in 7 steps using CDK automation.
+### AWS Profiles
+Configure two AWS CLI profiles:
+```bash
+# Account1 profile (Data Source)
+aws configure --profile cloudops-demo
 
-**Note:** If you already have S3 bucket and Redshift cluster created manually, skip to [Appendix: Manual Setup for Existing Resources](#appendix-manual-setup-for-existing-resources).
+# Account2 profile (Analytics)
+aws configure --profile default
+```
 
-### 1. Set Initial Environment Variables
+### Permissions Required
+- **Account1**: S3, IAM, Redshift integration creation
+- **Account2**: Redshift, VPC, Secrets Manager, QuickSight, CloudFormation
+
+### Optional (for QuickSight)
+- QuickSight Enterprise Edition subscription
+- QuickSight user account
+
+## 🚀 Quick Start (Complete Demo in 7 Steps)
+
+### Step 1: Set Environment Variables
 
 ```bash
 # AWS Profiles
-export ACCOUNT1_PROFILE="xxx"
-export ACCOUNT2_PROFILE="xxx"
+export ACCOUNT1_PROFILE="cloudops-demo"  # Your Account1 profile name
+export ACCOUNT2_PROFILE="default"        # Your Account2 profile name
 
-# Account IDs
-export ACCOUNT1_ID="xxx"
-export ACCOUNT2_ID="xxx"
-export AWS_REGION="xxx"
+# Get Account IDs automatically
+export ACCOUNT1_ID=$(aws sts get-caller-identity --profile $ACCOUNT1_PROFILE --query Account --output text)
+export ACCOUNT2_ID=$(aws sts get-caller-identity --profile $ACCOUNT2_PROFILE --query Account --output text)
 
-# S3 Bucket
+# Set Region
+export AWS_REGION="ap-southeast-1"  # Change to your preferred region
+
+# S3 Bucket Name
 export S3_BUCKET_NAME="${ACCOUNT1_ID}-data-source"
+
+# Verify settings
+echo "Account1: $ACCOUNT1_ID ($ACCOUNT1_PROFILE)"
+echo "Account2: $ACCOUNT2_ID ($ACCOUNT2_PROFILE)"
+echo "Region: $AWS_REGION"
+echo "S3 Bucket: $S3_BUCKET_NAME"
 ```
 
-### 2. Deploy Account2 (Redshift)
+### Step 2: Bootstrap CDK (First Time Only)
 
 ```bash
-cd cdk-account2 && npm install
-cdk deploy --profile $ACCOUNT2_PROFILE -c account1Id=$ACCOUNT1_ID -c s3BucketName=$S3_BUCKET_NAME
+# Bootstrap Account2 (Redshift account)
+cd cdk-account2
+cdk bootstrap aws://$ACCOUNT2_ID/$AWS_REGION --profile $ACCOUNT2_PROFILE
+
+# Bootstrap Account1 (S3 account)
+cd ../cdk-account1
+cdk bootstrap aws://$ACCOUNT1_ID/$AWS_REGION --profile $ACCOUNT1_PROFILE
+cd ..
 ```
 
-### 3. Capture Redshift Outputs
+### Step 3: Deploy Redshift Stack (Account2)
 
 ```bash
-export REDSHIFT_ROLE_ARN=$(aws cloudformation describe-stacks --stack-name RedshiftStack --query 'Stacks[0].Outputs[?OutputKey==`RedshiftRoleArn`].OutputValue' --output text --profile $ACCOUNT2_PROFILE)
-export CLUSTER_NAMESPACE_ARN=$(aws cloudformation describe-stacks --stack-name RedshiftStack --query 'Stacks[0].Outputs[?OutputKey==`ClusterNamespaceArn`].OutputValue' --output text --profile $ACCOUNT2_PROFILE)
+cd cdk-account2
+npm install
+
+# Deploy Redshift cluster, VPC, and IAM roles
+cdk deploy RedshiftStack --profile $ACCOUNT2_PROFILE \
+  -c account1Id=$ACCOUNT1_ID \
+  -c s3BucketName=$S3_BUCKET_NAME
+
+# ⏱️ This takes ~15-20 minutes (Redshift cluster creation)
 ```
 
-### 4. Deploy Account1 (S3)
+**What gets created:**
+- Redshift cluster (ra3.xlplus, single-node)
+- VPC with public/private subnets
+- IAM role for S3 access
+- Secrets Manager for database credentials
+- Security groups
+
+### Step 4: Capture Redshift Outputs
 
 ```bash
-cd ../cdk-account1 && npm install
-cdk deploy --profile $ACCOUNT1_PROFILE -c account2Id=$ACCOUNT2_ID -c redshiftRoleArn=$REDSHIFT_ROLE_ARN
+# Save important values from CloudFormation outputs
+export REDSHIFT_ROLE_ARN=$(aws cloudformation describe-stacks \
+  --stack-name RedshiftStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`RedshiftRoleArn`].OutputValue' \
+  --output text \
+  --profile $ACCOUNT2_PROFILE)
+
+export CLUSTER_NAMESPACE_ARN=$(aws cloudformation describe-stacks \
+  --stack-name RedshiftStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ClusterNamespaceArn`].OutputValue' \
+  --output text \
+  --profile $ACCOUNT2_PROFILE)
+
+# Verify
+echo "Redshift Role: $REDSHIFT_ROLE_ARN"
+echo "Cluster Namespace: $CLUSTER_NAMESPACE_ARN"
 ```
 
-### 5. Create S3 Event Integration
+### Step 5: Deploy S3 Stack (Account1)
 
 ```bash
+cd ../cdk-account1
+npm install
+
+# Deploy S3 bucket with cross-account policies
+cdk deploy --profile $ACCOUNT1_PROFILE \
+  -c account2Id=$ACCOUNT2_ID \
+  -c redshiftRoleArn=$REDSHIFT_ROLE_ARN
+
+# ⏱️ This takes ~2-3 minutes
+```
+
+**What gets created:**
+- S3 bucket with encryption
+- Bucket policies for Redshift access
+- Cross-account permissions
+
+### Step 6: Create S3 Event Integration
+
+```bash
+# Create integration from Account1
 INTEGRATION_OUTPUT=$(aws redshift create-integration \
   --integration-name s3-data-source-integration \
   --source-arn arn:aws:s3:::$S3_BUCKET_NAME \
   --target-arn $CLUSTER_NAMESPACE_ARN \
-  --region $AWS_REGION --profile $ACCOUNT1_PROFILE)
+  --region $AWS_REGION \
+  --profile $ACCOUNT1_PROFILE)
 
 export INTEGRATION_ARN=$(echo $INTEGRATION_OUTPUT | jq -r '.IntegrationArn')
 
-# Wait for integration to become active
+# Wait for integration to become active (takes ~30 seconds)
+echo "Waiting for integration to become active..."
+sleep 30
+
+# Check status
 aws redshift describe-integrations \
   --integration-arn $INTEGRATION_ARN \
   --region $AWS_REGION \
   --profile $ACCOUNT1_PROFILE
 ```
 
-### 6. Create COPY JOB in Redshift
+**Expected output:** Status should be "active"
 
-Connect to Redshift using Query Editor v2 and run:
+### Step 7: Create Tables and COPY JOBs in Redshift
 
-```sql
--- Create target table
-CREATE TABLE IF NOT EXISTS public.data_import (
-    id INTEGER,
-    name VARCHAR(255),
-    value DECIMAL(10,2),
-    timestamp TIMESTAMP
-);
+**Option A: Using Redshift Query Editor v2 (Recommended)**
 
--- Create auto-copy job (use environment variables)
-COPY public.data_import
-FROM 's3://$S3_BUCKET_NAME/'
-IAM_ROLE '$REDSHIFT_ROLE_ARN'
-CSV
-IGNOREHEADER 1
-JOB CREATE data_import_job
-AUTO ON;
-```
-
-### 7. Upload Test Data and Verify
+1. Open AWS Console → Redshift → Query Editor v2
+2. Connect to cluster: `redshift-cluster`
+3. Database: `dev`
+4. Run the SQL script:
 
 ```bash
-# Upload test data
-aws s3 cp data/sample1.csv s3://$S3_BUCKET_NAME/ --profile $ACCOUNT1_PROFILE
-aws s3 cp data/sample2.csv s3://$S3_BUCKET_NAME/ --profile $ACCOUNT1_PROFILE
+# View the SQL script
+cat sql/create_tables_ready.sql
 ```
 
-Verify in Redshift:
+Copy and paste the entire script into Query Editor v2 and execute.
+
+**Option B: Using AWS CLI**
+
+```bash
+# Get database credentials from Secrets Manager
+SECRET_ARN=$(aws cloudformation describe-stacks \
+  --stack-name RedshiftStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`SecretArn`].OutputValue' \
+  --output text \
+  --profile $ACCOUNT2_PROFILE)
+
+# Execute SQL (requires aws redshift-data CLI)
+aws redshift-data execute-statement \
+  --cluster-identifier redshift-cluster \
+  --database dev \
+  --secret-arn $SECRET_ARN \
+  --sql file://sql/create_tables_ready.sql \
+  --region $AWS_REGION \
+  --profile $ACCOUNT2_PROFILE
+```
+
+**What gets created:**
+- `analytics` schema
+- 4 tables: orders, order_items, customers, products
+- 4 COPY JOBs for automatic data loading
+
+### Step 8: Upload Test Data
+
+```bash
+# Upload sample CSV files to S3
+aws s3 cp data/orders.csv s3://$S3_BUCKET_NAME/orders/ --profile $ACCOUNT1_PROFILE
+aws s3 cp data/order_items.csv s3://$S3_BUCKET_NAME/order_items/ --profile $ACCOUNT1_PROFILE
+aws s3 cp data/customers.csv s3://$S3_BUCKET_NAME/customers/ --profile $ACCOUNT1_PROFILE
+aws s3 cp data/products.csv s3://$S3_BUCKET_NAME/products/ --profile $ACCOUNT1_PROFILE
+
+echo "✅ Data uploaded! COPY JOBs will automatically load data into Redshift."
+```
+
+### Step 9: Verify Data Loading
+
+Wait 1-2 minutes for COPY JOBs to process, then verify in Redshift Query Editor:
 
 ```sql
--- Check COPY JOB
-SELECT job_id, job_name, data_source 
+-- Check COPY JOB status
+SELECT job_id, job_name, data_source, job_status 
 FROM sys_copy_job 
-WHERE job_name = 'data_import_job';
+WHERE job_name LIKE '%_import_job';
 
--- View loaded data
-SELECT * FROM public.data_import ORDER BY id;
+-- Verify data loaded
+SELECT 'orders' as table_name, COUNT(*) as row_count FROM analytics.orders
+UNION ALL
+SELECT 'order_items', COUNT(*) FROM analytics.order_items
+UNION ALL
+SELECT 'customers', COUNT(*) FROM analytics.customers
+UNION ALL
+SELECT 'products', COUNT(*) FROM analytics.products;
 ```
+
+**Expected results:**
+- orders: 10 rows
+- order_items: 16 rows
+- customers: 7 rows
+- products: 8 rows
+
+### Step 10: Run Sample Analytics Queries
+
+```bash
+# View sample queries
+cat sql/sample_queries.sql
+```
+
+Try these queries in Redshift Query Editor:
+1. Sales by Region
+2. Top Products by Revenue
+3. Customer Segment Analysis
+4. Daily Sales Trend
+5. Product Category Performance
+
+## 🎨 QuickSight Setup (Optional)
 
 ## Project Structure
 
@@ -209,8 +357,13 @@ SELECT * FROM public.data_import ORDER BY id;
 .
 ├── README.md                          # Complete documentation
 ├── data/
-│   ├── sample1.csv                    # 5 sample records
-│   └── sample2.csv                    # 5 sample records
+│   ├── orders.csv                     # Orders fact table (10 records)
+│   ├── order_items.csv                # Order line items (16 records)
+│   ├── customers.csv                  # Customer dimension (7 records)
+│   └── products.csv                   # Product dimension (8 records)
+├── sql/
+│   ├── create_tables.sql              # Table schemas and COPY JOBs
+│   └── sample_queries.sql             # Sample analytics queries
 ├── cdk-account1/                      # Account1 CDK ($ACCOUNT1_PROFILE)
 │   ├── bin/app.ts
 │   ├── lib/
@@ -222,6 +375,7 @@ SELECT * FROM public.data_import ORDER BY id;
     ├── bin/app.ts
     ├── lib/
     │   ├── redshift-stack.ts          # Redshift cluster + policies
+    │   ├── quicksight-stack.ts        # QuickSight VPC connection
     │   └── lambda/
     │       └── resource-policy-handler.js
     ├── package.json
@@ -350,15 +504,17 @@ aws redshift delete-integration \
   --profile $ACCOUNT1_PROFILE
 
 # 2. Drop COPY JOB (in Redshift)
-DROP JOB data_import_job;
+COPY JOB DROP data_import_job;
 
 # 3. Delete Account1 Stack
 cd cdk-account1
-cdk destroy --profile $ACCOUNT1_PROFILE
+cdk destroy --profile $ACCOUNT1_PROFILE --force
+
+cd ..
 
 # 4. Delete Account2 Stack
 cd cdk-account2
-cdk destroy --profile $ACCOUNT2_PROFILE
+cdk destroy --profile $ACCOUNT2_PROFILE --force
 ```
 
 ## Key Learnings
@@ -412,6 +568,80 @@ Both resource policies (S3 and Redshift) and IAM policies are required for cross
 4. Create CloudWatch dashboard for monitoring
 5. Add support for different file formats (JSON, Parquet)
 6. Implement data deduplication logic
+
+## QuickSight Integration
+
+### Deploy QuickSight Stack
+
+```bash
+cd cdk-account2
+cdk deploy QuickSightStack --profile $ACCOUNT2_PROFILE \
+  -c account1Id=$ACCOUNT1_ID \
+  -c s3BucketName=$S3_BUCKET_NAME \
+  -c enableQuickSight=true
+```
+
+### Setup QuickSight
+
+1. **Subscribe to QuickSight** (if not already):
+   - Go to QuickSight console
+   - Choose Enterprise Edition
+   - Select region: ap-southeast-1
+
+2. **Create VPC Connection** (Manual - Required):
+   
+   The QuickSight VPC connection must be created manually in the console due to IAM permission validation timing issues with CloudFormation.
+   
+   - Go to QuickSight console → Manage QuickSight → Manage VPC connections
+   - Click "Add VPC connection"
+   - Use these values from stack outputs:
+     - VPC connection name: `redshift-vpc-connection`
+     - VPC ID: Get from RedshiftStack VPC (e.g., `vpc-08a5c1c6297ed920e`)
+     - Subnet IDs: Get from RedshiftStack outputs (e.g., `subnet-06373a3eeae5fc367`, `subnet-09c8f4f3660a2c01e`)
+     - Security group: Get from QuickSightStack output `QuickSightSecurityGroupId`
+     - IAM role: Use the `QuickSightRoleArn` from QuickSightStack outputs
+   - Click "Create"
+   - Wait for status to change from "Creation in progress" to "Available" (may take a few minutes)
+
+3. **Create Data Source**:
+   - In QuickSight console, go to Datasets → New dataset
+   - Choose "Redshift Auto-discovered cluster"
+   - Select your cluster: `redshift-cluster`
+   - Database: `dev`
+   - Connection type: Use VPC connection
+   - VPC connection: Select `redshift-vpc-connection` (the one you just created)
+   - Authentication: Use IAM credentials
+   - IAM role: Use the QuickSightRedshiftRole ARN from stack outputs
+
+3. **Create Dataset**:
+   - Select tables from `analytics` schema: `orders`, `order_items`, `customers`, `products`
+   - Join tables for comprehensive analysis
+   - Import to SPICE for better performance
+   - Click "Visualize"
+
+4. **Build Dashboard**:
+   - Sales by Region (bar chart)
+   - Revenue Trend (line chart)
+   - Top Products (table)
+   - Customer Segment Analysis (pie chart)
+   - Add filters, calculated fields
+   - Publish dashboard for sharing
+
+### QuickSight Costs
+
+- **Enterprise Edition**: $18/month per author, $0.30/session for readers (max $5/month)
+- **SPICE**: $0.25/GB/month (10GB free per author)
+- **VPC Connection**: No additional charge
+
+### Cleanup QuickSight
+
+```bash
+# Delete QuickSight stack
+cd cdk-account2
+cdk destroy QuickSightStack --profile $ACCOUNT2_PROFILE
+
+# Cancel QuickSight subscription (manual in console)
+```
 
 ## Appendix: Manual Setup for Existing Resources
 

@@ -1,0 +1,9 @@
+product_id,product_name,category,subcategory,unit_cost,supplier_id
+P101,Laptop Pro 15,Electronics,Computers,180.00,S001
+P102,Wireless Mouse,Electronics,Accessories,25.00,S002
+P103,Office Chair Deluxe,Furniture,Seating,450.00,S003
+P104,Standing Desk,Furniture,Desks,200.00,S003
+P105,USB-C Hub,Electronics,Accessories,80.00,S002
+P106,Monitor 27inch,Electronics,Displays,400.00,S001
+P107,Ergonomic Keyboard,Electronics,Accessories,150.00,S002
+P108,Desk Lamp LED,Furniture,Lighting,100.00,S004

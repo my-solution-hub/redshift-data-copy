@@ -162,45 +162,130 @@ aws redshift describe-integrations \
 
 ### 6. 在 Redshift 中创建 COPY JOB
 
-使用 Query Editor v2 连接到 Redshift 并运行：
+使用 Query Editor v2 连接到 Redshift 并运行 SQL 脚本：
+
+```bash
+# SQL 脚本将创建：
+# - analytics 模式
+# - 4 个表：orders, order_items, customers, products
+# - 4 个 COPY JOB 用于自动数据加载
+cat sql/create_tables.sql
+```
+
+或手动执行：
 
 ```sql
--- Create target table
-CREATE TABLE IF NOT EXISTS public.data_import (
-    id INTEGER,
-    name VARCHAR(255),
-    value DECIMAL(10,2),
-    timestamp TIMESTAMP
-);
+-- 创建模式
+CREATE SCHEMA IF NOT EXISTS analytics;
 
--- Create auto-copy job (use environment variables)
-COPY public.data_import
-FROM 's3://$S3_BUCKET_NAME/'
+-- 订单事实表
+CREATE TABLE IF NOT EXISTS analytics.orders (
+    order_id INTEGER PRIMARY KEY,
+    customer_id VARCHAR(10) NOT NULL,
+    order_date TIMESTAMP NOT NULL,
+    total_amount DECIMAL(10,2) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    region VARCHAR(50) NOT NULL
+) SORTKEY(order_date);
+
+-- 订单明细事实表
+CREATE TABLE IF NOT EXISTS analytics.order_items (
+    order_id INTEGER NOT NULL,
+    product_id VARCHAR(10) NOT NULL,
+    quantity INTEGER NOT NULL,
+    unit_price DECIMAL(10,2) NOT NULL,
+    discount DECIMAL(3,2) DEFAULT 0.00,
+    PRIMARY KEY (order_id, product_id)
+) DISTKEY(order_id) SORTKEY(order_id);
+
+-- 客户维度表
+CREATE TABLE IF NOT EXISTS analytics.customers (
+    customer_id VARCHAR(10) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    signup_date DATE NOT NULL,
+    customer_segment VARCHAR(20) NOT NULL,
+    country VARCHAR(50) NOT NULL
+) DISTSTYLE ALL;
+
+-- 产品维度表
+CREATE TABLE IF NOT EXISTS analytics.products (
+    product_id VARCHAR(10) PRIMARY KEY,
+    product_name VARCHAR(100) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    subcategory VARCHAR(50) NOT NULL,
+    unit_cost DECIMAL(10,2) NOT NULL,
+    supplier_id VARCHAR(10) NOT NULL
+) DISTSTYLE ALL;
+
+-- 为每个表创建 COPY JOB（替换环境变量）
+COPY analytics.orders
+FROM 's3://$S3_BUCKET_NAME/orders/'
 IAM_ROLE '$REDSHIFT_ROLE_ARN'
 CSV
 IGNOREHEADER 1
-JOB CREATE data_import_job
+JOB CREATE orders_import_job
+AUTO ON;
+
+COPY analytics.order_items
+FROM 's3://$S3_BUCKET_NAME/order_items/'
+IAM_ROLE '$REDSHIFT_ROLE_ARN'
+CSV
+IGNOREHEADER 1
+JOB CREATE order_items_import_job
+AUTO ON;
+
+COPY analytics.customers
+FROM 's3://$S3_BUCKET_NAME/customers/'
+IAM_ROLE '$REDSHIFT_ROLE_ARN'
+CSV
+IGNOREHEADER 1
+JOB CREATE customers_import_job
+AUTO ON;
+
+COPY analytics.products
+FROM 's3://$S3_BUCKET_NAME/products/'
+IAM_ROLE '$REDSHIFT_ROLE_ARN'
+CSV
+IGNOREHEADER 1
+JOB CREATE products_import_job
 AUTO ON;
 ```
 
 ### 7. 上传测试数据并验证
 
 ```bash
-# Upload test data
-aws s3 cp data/sample1.csv s3://$S3_BUCKET_NAME/ --profile $ACCOUNT1_PROFILE
-aws s3 cp data/sample2.csv s3://$S3_BUCKET_NAME/ --profile $ACCOUNT1_PROFILE
+# 上传测试数据到不同的前缀
+aws s3 cp data/orders.csv s3://$S3_BUCKET_NAME/orders/ --profile $ACCOUNT1_PROFILE
+aws s3 cp data/order_items.csv s3://$S3_BUCKET_NAME/order_items/ --profile $ACCOUNT1_PROFILE
+aws s3 cp data/customers.csv s3://$S3_BUCKET_NAME/customers/ --profile $ACCOUNT1_PROFILE
+aws s3 cp data/products.csv s3://$S3_BUCKET_NAME/products/ --profile $ACCOUNT1_PROFILE
 ```
 
 在 Redshift 中验证：
 
 ```sql
--- Check COPY JOB
+-- 检查 COPY JOB
 SELECT job_id, job_name, data_source 
 FROM sys_copy_job 
-WHERE job_name = 'data_import_job';
+WHERE job_name LIKE '%_import_job';
 
--- View loaded data
-SELECT * FROM public.data_import ORDER BY id;
+-- 查看加载的数据
+SELECT COUNT(*) as order_count FROM analytics.orders;
+SELECT COUNT(*) as order_item_count FROM analytics.order_items;
+SELECT COUNT(*) as customer_count FROM analytics.customers;
+SELECT COUNT(*) as product_count FROM analytics.products;
+
+-- 示例分析查询
+SELECT 
+    c.customer_segment,
+    COUNT(DISTINCT o.order_id) as total_orders,
+    SUM(o.total_amount) as total_revenue
+FROM analytics.orders o
+JOIN analytics.customers c ON o.customer_id = c.customer_id
+WHERE o.status = 'completed'
+GROUP BY c.customer_segment
+ORDER BY total_revenue DESC;
 ```
 
 ## 项目结构
@@ -209,8 +294,13 @@ SELECT * FROM public.data_import ORDER BY id;
 .
 ├── README.md                          # 完整文档
 ├── data/
-│   ├── sample1.csv                    # 5 条示例记录
-│   └── sample2.csv                    # 5 条示例记录
+│   ├── orders.csv                     # 订单事实表（10 条记录）
+│   ├── order_items.csv                # 订单明细（16 条记录）
+│   ├── customers.csv                  # 客户维度（7 条记录）
+│   └── products.csv                   # 产品维度（8 条记录）
+├── sql/
+│   ├── create_tables.sql              # 表结构和 COPY JOB
+│   └── sample_queries.sql             # 示例分析查询
 ├── cdk-account1/                      # Account1 CDK ($ACCOUNT1_PROFILE)
 │   ├── bin/app.ts
 │   ├── lib/
@@ -222,6 +312,7 @@ SELECT * FROM public.data_import ORDER BY id;
     ├── bin/app.ts
     ├── lib/
     │   ├── redshift-stack.ts          # Redshift 集群及策略
+    │   ├── quicksight-stack.ts        # QuickSight VPC 连接
     │   └── lambda/
     │       └── resource-policy-handler.js
     ├── package.json
@@ -350,7 +441,7 @@ aws redshift delete-integration \
   --profile $ACCOUNT1_PROFILE
 
 # 2. Drop COPY JOB (in Redshift)
-DROP JOB data_import_job;
+COPY JOB DROP data_import_job;
 
 # 3. Delete Account1 Stack
 cd cdk-account1
@@ -412,6 +503,80 @@ bucket.addToResourcePolicy(new iam.PolicyStatement({
 4. 创建 CloudWatch 仪表板进行监控
 5. 添加对不同文件格式的支持（JSON、Parquet）
 6. 实现数据去重逻辑
+
+## QuickSight 集成
+
+### 部署 QuickSight 堆栈
+
+```bash
+cd cdk-account2
+cdk deploy QuickSightStack --profile $ACCOUNT2_PROFILE \
+  -c account1Id=$ACCOUNT1_ID \
+  -c s3BucketName=$S3_BUCKET_NAME \
+  -c enableQuickSight=true
+```
+
+### 设置 QuickSight
+
+1. **订阅 QuickSight**（如果尚未订阅）：
+   - 进入 QuickSight 控制台
+   - 选择企业版
+   - 选择区域：ap-southeast-1
+
+2. **创建 VPC 连接**（手动 - 必需）：
+   
+   由于 CloudFormation 的 IAM 权限验证时序问题，QuickSight VPC 连接必须在控制台手动创建。
+   
+   - 进入 QuickSight 控制台 → 管理 QuickSight → 管理 VPC 连接
+   - 点击"添加 VPC 连接"
+   - 使用堆栈输出中的以下值：
+     - VPC 连接名称：`redshift-vpc-connection`
+     - VPC ID：从 RedshiftStack VPC 获取（例如：`vpc-08a5c1c6297ed920e`）
+     - 子网 ID：从 RedshiftStack 输出获取（例如：`subnet-06373a3eeae5fc367`, `subnet-09c8f4f3660a2c01e`）
+     - 安全组：从 QuickSightStack 输出 `QuickSightSecurityGroupId` 获取
+     - IAM 角色：使用 QuickSightStack 输出中的 `QuickSightRoleArn`
+   - 点击"创建"
+   - 等待状态从"创建中"变为"可用"（可能需要几分钟）
+
+3. **创建数据源**：
+   - 在 QuickSight 控制台，进入数据集 → 新建数据集
+   - 选择"Redshift 自动发现的集群"
+   - 选择您的集群：`redshift-cluster`
+   - 数据库：`dev`
+   - 连接类型：使用 VPC 连接
+   - VPC 连接：选择 `redshift-vpc-connection`（您刚创建的）
+   - 身份验证：使用 IAM 凭证
+   - IAM 角色：使用堆栈输出中的 QuickSightRedshiftRole ARN
+
+3. **创建数据集**：
+   - 从 `analytics` 模式选择表：`orders`, `order_items`, `customers`, `products`
+   - 连接表进行综合分析
+   - 导入到 SPICE 以获得更好的性能
+   - 点击"可视化"
+
+4. **构建仪表板**：
+   - 按区域销售（柱状图）
+   - 收入趋势（折线图）
+   - 热门产品（表格）
+   - 客户细分分析（饼图）
+   - 添加过滤器、计算字段
+   - 发布仪表板以供共享
+
+### QuickSight 成本
+
+- **企业版**：每位作者 $18/月，读者 $0.30/会话（最高 $5/月）
+- **SPICE**：$0.25/GB/月（每位作者免费 10GB）
+- **VPC 连接**：无额外费用
+
+### 清理 QuickSight
+
+```bash
+# 删除 QuickSight 堆栈
+cd cdk-account2
+cdk destroy QuickSightStack --profile $ACCOUNT2_PROFILE
+
+# 取消 QuickSight 订阅（在控制台手动操作）
+```
 
 ## 附录：现有资源的手动设置
 

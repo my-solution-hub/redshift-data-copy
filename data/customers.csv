@@ -1,0 +1,8 @@
+customer_id,name,email,signup_date,customer_segment,country
+C001,John Smith,john.smith@email.com,2023-06-15,premium,USA
+C002,Sarah Johnson,sarah.j@email.com,2023-08-22,standard,USA
+C003,Michael Brown,m.brown@email.com,2023-05-10,premium,UK
+C004,Emily Chen,emily.chen@email.com,2023-11-03,standard,Singapore
+C005,David Wilson,d.wilson@email.com,2023-03-18,enterprise,USA
+C006,Maria Garcia,maria.g@email.com,2023-09-25,standard,Spain
+C007,James Lee,james.lee@email.com,2023-07-12,premium,Singapore

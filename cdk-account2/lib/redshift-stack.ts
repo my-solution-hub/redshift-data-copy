@@ -14,6 +14,12 @@ interface RedshiftStackProps extends cdk.StackProps {
 }
 
 export class RedshiftStack extends cdk.Stack {
+  public readonly vpc: ec2.IVpc;
+  public readonly redshiftSecurityGroup: ec2.ISecurityGroup;
+  public readonly quicksightSecurityGroup: ec2.ISecurityGroup;
+  public readonly clusterIdentifier: string;
+  public readonly databaseName: string;
+
   constructor(scope: Construct, id: string, props?: RedshiftStackProps) {
     super(scope, id, props);
 
@@ -48,7 +54,27 @@ export class RedshiftStack extends cdk.Stack {
       description: 'Redshift cluster security group'
     });
 
+    // Security group for QuickSight
+    const quicksightSg = new ec2.SecurityGroup(this, 'QuickSightSecurityGroup', {
+      vpc,
+      description: 'Security group for QuickSight VPC connection',
+      allowAllOutbound: true,
+    });
+
+    // Allow QuickSight to connect to Redshift
+    securityGroup.addIngressRule(
+      quicksightSg,
+      ec2.Port.tcp(5439),
+      'Allow QuickSight to connect to Redshift'
+    );
+
+    // Store references for QuickSight integration
+    this.vpc = vpc;
+    this.redshiftSecurityGroup = securityGroup;
+    this.quicksightSecurityGroup = quicksightSg;
+
     const cluster = new redshift.CfnCluster(this, 'RedshiftCluster', {
+      clusterIdentifier: 'redshift-cluster',
       clusterType: 'single-node',
       nodeType: 'ra3.xlplus',
       dbName: 'dev',
@@ -61,6 +87,10 @@ export class RedshiftStack extends cdk.Stack {
     });
 
     cluster.addDependency(subnetGroup);
+
+    // Store cluster info for QuickSight integration
+    this.clusterIdentifier = 'redshift-cluster';
+    this.databaseName = 'dev';
 
     // Add resource policy if Account1 details are provided
     if (props?.account1Id && props?.s3BucketName) {

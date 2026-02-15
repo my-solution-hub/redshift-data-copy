@@ -1,0 +1,11 @@
+order_id,customer_id,order_date,total_amount,status,region
+1001,C001,2024-01-15 10:23:00,1250.50,completed,us-east
+1002,C002,2024-01-15 11:45:00,890.25,completed,us-west
+1003,C003,2024-01-15 14:30:00,2340.00,completed,eu-west
+1004,C001,2024-01-16 09:15:00,567.80,completed,us-east
+1005,C004,2024-01-16 13:20:00,1890.00,pending,ap-southeast
+1006,C005,2024-01-16 15:45:00,3200.50,completed,us-east
+1007,C002,2024-01-17 08:30:00,445.75,completed,us-west
+1008,C006,2024-01-17 10:00:00,1567.90,cancelled,eu-west
+1009,C003,2024-01-17 16:20:00,890.00,completed,eu-west
+1010,C007,2024-01-18 11:30:00,2100.00,completed,ap-southeast
